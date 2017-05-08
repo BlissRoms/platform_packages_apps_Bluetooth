@@ -21,6 +21,7 @@
 package com.android.bluetooth.btservice;
 
 import android.app.AlarmManager;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
@@ -125,6 +126,7 @@ public class AdapterService extends Service {
     public static final String BLUETOOTH_ADMIN_PERM =
         android.Manifest.permission.BLUETOOTH_ADMIN;
 
+    public static int oppNotificationId = 0;
     static final ParcelUuid[] A2DP_SOURCE_SINK_UUIDS = {
         BluetoothUuid.AudioSource,
         BluetoothUuid.AudioSink
@@ -652,6 +654,15 @@ public class AdapterService extends Service {
         return;
     }
 
+    void cleanOppNotifciations() {
+        Log.d(TAG, " cleanOppNotifciations ID:" + oppNotificationId);
+        if (oppNotificationId != 0) {
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            nm.cancel(oppNotificationId);
+            oppNotificationId = 0;
+        }
+    }
+
     boolean stopGattProfileService() {
         //TODO: can optimize this instead of looping around all supported profiles
         debugLog("stopGattProfileService()");
@@ -766,6 +777,8 @@ public class AdapterService extends Service {
     private static final int CONNECT_OTHER_PROFILES_TIMEOUT= 6000;
     private static final int CONNECT_OTHER_PROFILES_TIMEOUT_DELAYED = 10000;
     private static final int CONNECT_OTHER_CLIENT_PROFILES_TIMEOUT= 2000;
+    private static final int MESSAGE_AUTO_CONNECT_PROFILES = 50;
+    private static final int AUTO_CONNECT_PROFILES_TIMEOUT= 500;
 
     private final Handler mHandler = new Handler() {
         @Override
@@ -801,6 +814,11 @@ public class AdapterService extends Service {
                     debugLog( "handleMessage() - MESSAGE_CONNECT_OTHER_CLIENT_PROFILES ");
                     processConnectOtherClientProfiles((BluetoothDevice) msg.obj, msg.arg1);
                     break;
+                case MESSAGE_AUTO_CONNECT_PROFILES: {
+                    if (DBG) debugLog( "MESSAGE_AUTO_CONNECT_PROFILES");
+                    autoConnectProfilesDelayed();
+                    break;
+                }
             }
         }
     };
@@ -1043,7 +1061,8 @@ public class AdapterService extends Service {
             //do not allow setmode when multicast is active
             A2dpService a2dpService = A2dpService.getA2dpService();
             if (a2dpService != null &&
-                    a2dpService.isMulticastOngoing(null)) {
+                a2dpService.isMulticastFeatureEnabled() &&
+                a2dpService.isMulticastOngoing(null)) {
                 Log.i(TAG,"A2dp Multicast is Ongoing, ignore setmode " + mode);
                 mScanmode = mode;
                 return false;
@@ -1186,6 +1205,12 @@ public class AdapterService extends Service {
             AdapterService service = getService();
             if (service == null) return BluetoothDevice.BOND_NONE;
             return service.getBondState(device);
+        }
+
+        public long getSupportedProfiles() {
+            AdapterService service = getService();
+            if (service == null) return 0;
+            return service.getSupportedProfiles();
         }
 
         public int getConnectionState(BluetoothDevice device) {
@@ -1639,7 +1664,8 @@ public class AdapterService extends Service {
         //do not allow new connections with active multicast
         A2dpService a2dpService = A2dpService.getA2dpService();
         if (a2dpService != null &&
-                a2dpService.isMulticastOngoing(null)) {
+            a2dpService.isMulticastFeatureEnabled() &&
+            a2dpService.isMulticastOngoing(null)) {
             Log.i(TAG,"A2dp Multicast is Ongoing, ignore discovery");
             return false;
         }
@@ -1702,7 +1728,8 @@ public class AdapterService extends Service {
         // Multicast: Do not allow bonding while multcast
         A2dpService a2dpService = A2dpService.getA2dpService();
         if (a2dpService != null &&
-                a2dpService.isMulticastOngoing(null)) {
+            a2dpService.isMulticastFeatureEnabled() &&
+            a2dpService.isMulticastOngoing(null)) {
             Log.i(TAG,"A2dp Multicast is ongoing, ignore bonding");
             return false;
         }
@@ -1729,7 +1756,18 @@ public class AdapterService extends Service {
           return mQuietmode;
      }
 
-     public void autoConnect(){
+    // Delaying Auto Connect to make sure that all clients
+    // are up and running, specially BluetoothHeadset.
+    public void autoConnect() {
+        debugLog( "delay auto connect by 500 ms");
+        if ((mHandler.hasMessages(MESSAGE_AUTO_CONNECT_PROFILES) == false) &&
+            (isQuietModeEnabled()== false)) {
+            Message m = mHandler.obtainMessage(MESSAGE_AUTO_CONNECT_PROFILES);
+            mHandler.sendMessageDelayed(m,AUTO_CONNECT_PROFILES_TIMEOUT);
+        }
+    }
+
+    private void autoConnectProfilesDelayed(){
         if (getState() != BluetoothAdapter.STATE_ON){
              errorLog("autoConnect() - BT is not ON. Exiting autoConnect");
              return;
@@ -2187,6 +2225,10 @@ public class AdapterService extends Service {
             return BluetoothDevice.BOND_NONE;
         }
         return deviceProp.getBondState();
+    }
+
+    long getSupportedProfiles() {
+        return Config.getSupportedProfilesBitMask();
     }
 
     int getConnectionState(BluetoothDevice device) {
@@ -2726,6 +2768,15 @@ public class AdapterService extends Service {
         }
     }
 
+    public void captureVndLogs() {
+        mVendor.captureVndLogs();
+    }
+
+    public void setSnooplogState(boolean status) {
+        Settings.Secure.putInt(getContentResolver(),
+                Settings.Secure.BLUETOOTH_HCI_LOG, status ? 1 : 0);
+    }
+
     @Override
     protected void dump(FileDescriptor fd, PrintWriter writer, String[] args) {
         enforceCallingOrSelfPermission(android.Manifest.permission.DUMP, TAG);
@@ -2742,20 +2793,6 @@ public class AdapterService extends Service {
                 return;
             }
         }
-
-        long onDuration = System.currentTimeMillis() - mBluetoothStartTime;
-        String onDurationString = String.format("%02d:%02d:%02d.%03d",
-                                      (int)(onDuration / (1000 * 60 * 60)),
-                                      (int)((onDuration / (1000 * 60)) % 60),
-                                      (int)((onDuration / 1000) % 60),
-                                      (int)(onDuration % 1000));
-
-        writer.println("Bluetooth Status");
-        writer.println("  enabled: " + isEnabled());
-        writer.println("  state: " + getStateString());
-        writer.println("  address: " + getAddress());
-        writer.println("  name: " + getName());
-        writer.println("  time since enabled: " + onDurationString + "\n");
 
         writer.println("Bonded devices:");
         for (BluetoothDevice device : getBondedDevices()) {
