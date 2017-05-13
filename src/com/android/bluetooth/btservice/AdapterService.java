@@ -542,6 +542,7 @@ public class AdapterService extends Service {
         mProfileObserver = new ProfileObserver(getApplicationContext(), this, new Handler());
         mProfileObserver.start();
         mVendor.init();
+        mBondStateMachine = BondStateMachine.make(mPowerManager, this, mAdapterProperties, mRemoteDevices);
 
         setAdapterService(this);
     }
@@ -589,7 +590,6 @@ public class AdapterService extends Service {
         mAdapterProperties.init(mRemoteDevices);
 
         debugLog("BleOnProcessStart() - Make Bond State Machine");
-        mBondStateMachine = BondStateMachine.make(mPowerManager, this, mAdapterProperties, mRemoteDevices);
 
         mJniCallbacks.init(mBondStateMachine,mRemoteDevices);
 
@@ -1205,6 +1205,12 @@ public class AdapterService extends Service {
             AdapterService service = getService();
             if (service == null) return BluetoothDevice.BOND_NONE;
             return service.getBondState(device);
+        }
+
+        public long getSupportedProfiles() {
+            AdapterService service = getService();
+            if (service == null) return 0;
+            return service.getSupportedProfiles();
         }
 
         public int getConnectionState(BluetoothDevice device) {
@@ -2221,6 +2227,10 @@ public class AdapterService extends Service {
         return deviceProp.getBondState();
     }
 
+    long getSupportedProfiles() {
+        return Config.getSupportedProfilesBitMask();
+    }
+
     int getConnectionState(BluetoothDevice device) {
         enforceCallingOrSelfPermission(BLUETOOTH_PERM, "Need BLUETOOTH permission");
         byte[] addr = Utils.getBytesFromAddress(device.getAddress());
@@ -2783,20 +2793,6 @@ public class AdapterService extends Service {
                 return;
             }
         }
-
-        long onDuration = System.currentTimeMillis() - mBluetoothStartTime;
-        String onDurationString = String.format("%02d:%02d:%02d.%03d",
-                                      (int)(onDuration / (1000 * 60 * 60)),
-                                      (int)((onDuration / (1000 * 60)) % 60),
-                                      (int)((onDuration / 1000) % 60),
-                                      (int)(onDuration % 1000));
-
-        writer.println("Bluetooth Status");
-        writer.println("  enabled: " + isEnabled());
-        writer.println("  state: " + getStateString());
-        writer.println("  address: " + getAddress());
-        writer.println("  name: " + getName());
-        writer.println("  time since enabled: " + onDurationString + "\n");
 
         writer.println("Bonded devices:");
         for (BluetoothDevice device : getBondedDevices()) {
