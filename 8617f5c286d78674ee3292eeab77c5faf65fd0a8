@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "95b84ad4_3b4ea0c8",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000061
+      },
+      "writtenOn": "2022-01-08T13:06:23Z",
+      "side": 1,
+      "message": "Bluetooth will not work without this",
+      "revId": "8617f5c286d78674ee3292eeab77c5faf65fd0a8",
+      "serverId": "b7386340-edb3-408c-9cac-98e148952b30"
+    }
+  ]
+}
