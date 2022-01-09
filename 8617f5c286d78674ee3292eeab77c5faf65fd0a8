@@ -16,6 +16,23 @@
       "message": "Bluetooth will not work without this",
       "revId": "8617f5c286d78674ee3292eeab77c5faf65fd0a8",
       "serverId": "b7386340-edb3-408c-9cac-98e148952b30"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "844508eb_77759e91",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000061
+      },
+      "writtenOn": "2022-01-09T05:09:28Z",
+      "side": 1,
+      "message": "working",
+      "revId": "8617f5c286d78674ee3292eeab77c5faf65fd0a8",
+      "serverId": "b7386340-edb3-408c-9cac-98e148952b30"
     }
   ]
 }
